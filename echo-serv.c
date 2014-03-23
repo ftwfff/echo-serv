@@ -18,50 +18,53 @@ struct service *svc;
 int start_listen(void)
 {
 	struct socket *acsock;
-	int error;
+	int error, i;
 	struct sockaddr_in sin;
 
-	error = sock_create(PF_INET,SOCK_STREAM,IPPROTO_TCP,&svc->listen_socket);
+	error = sock_create_kern(PF_INET,SOCK_STREAM,IPPROTO_TCP,&svc->listen_socket);
 	if(error<0) {
-		printk(KERN_ERR "cannot create socket");
-		return -1;
+		printk(KERN_ERR "cannot create socket\n");
+		goto wait;
 	}
 
-	sin.sin_addr.s_addr=htonl(INADDR_ANY);
-	sin.sin_family=AF_INET;
-	sin.sin_port=htons(PORT);
+	sin.sin_addr.s_addr = htonl(INADDR_ANY);
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(PORT);
 
-	error = svc->listen_socket->ops->bind(svc->listen_socket,(struct sockaddr*)&sin,sizeof(sin));
-	if(error<0) {
-		printk(KERN_ERR "cannot bind socket");
-		return -1;
+	error = kernel_bind(svc->listen_socket,(struct sockaddr*)&sin,sizeof(sin));
+	if(error < 0) {
+		printk(KERN_ERR "cannot bind socket, error code: %d\n", error);
+		goto wait;
 	}
 
-	error = svc->listen_socket->ops->listen(svc->listen_socket,5);
+	error = kernel_listen(svc->listen_socket,5);
 	if(error<0) {
-		printk(KERN_ERR "cannot listen to socket");
-		return -1;
+		printk(KERN_ERR "cannot listen to socket, error code: %d\n", error);
+		goto wait;
 	}
 
 	acsock = kmalloc(sizeof(struct socket), GFP_KERNEL);
+	i = 0;
 	while (!kthread_should_stop()) {
-		error = sock_create(PF_INET,SOCK_STREAM,IPPROTO_TCP,&acsock);
+		error = kernel_accept(svc->listen_socket, &acsock, 0);
 		if(error<0) {
-			printk(KERN_ERR "cannot create accept socket");
+			printk(KERN_ERR "cannot accept socket\n");
 			kfree(acsock);
-			return -1;
+			goto wait;
 		}
-		error = svc->listen_socket->ops->accept(svc->listen_socket, acsock, 0);
-		if(error<0) {
-			printk(KERN_ERR "cannot accept socket");
-			sock_release(acsock);
-			kfree(acsock);
-			return -1;
-		}
-		printk(KERN_ERR "sock accepted");
+		printk(KERN_ERR "sock %d accepted\n", i++);
+		kernel_sock_shutdown(acsock, SHUT_RDWR);
 		sock_release(acsock);
 	}
 	kfree(acsock);
+wait:
+	set_current_state(TASK_INTERRUPTIBLE);
+	while (!kthread_should_stop()) {
+		schedule();
+		set_current_state(TASK_INTERRUPTIBLE);
+	}
+	__set_current_state(TASK_RUNNING);
+
 	return 0;
 }
 
@@ -69,21 +72,23 @@ static int __init mod_init(void)
 {
 	svc = kmalloc(sizeof(struct service), GFP_KERNEL);
 	svc->thread = kthread_run((void *)start_listen, NULL, "ktcp");
-	printk(KERN_ALERT "echo-serv module loaded");
+	printk(KERN_ALERT "echo-serv module loaded\n");
 
         return 0;
 }
 
 static void __exit mod_exit(void)
 {
-	kthread_stop(svc->thread);
 	if (svc->listen_socket != NULL) {
-		sock_release(svc->listen_socket);
+		kernel_sock_shutdown(svc->listen_socket, SHUT_RDWR);
+		svc->listen_socket->ops->release(svc->listen_socket);
+		printk(KERN_ALERT "release socket\n");
 	}
+	
+	kthread_stop(svc->thread);
 
 	kfree(svc);
-	printk(KERN_ALERT "removed echo-serv module");
-	
+	printk(KERN_ALERT "removed echo-serv module\n");
 }
 
 module_init(mod_init);
