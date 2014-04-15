@@ -1,16 +1,11 @@
 echo server
 ===========
 
-Simple echo server and client module for the linux kernel. Part of my master's
-thesis, to better understand the working of the kernel and explore the ways of
-how to develop a kernel module.
-
+Simple echo server module for the linux kernel. Part of my master's thesis, to
+better understand the working of linux kernel modules and how to develop them.
 
 Current functionality
 ---------------------
 
-- TCP connections
-- Server listens on port 2325, accepts one connection at a time
-- Server will return all data it receives
-- Client connects to server and periodically sends message and waits for reply
+- TCP and UDP server and client module working
 - Uses blocking sockets, MUST change asap

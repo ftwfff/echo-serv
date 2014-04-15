@@ -4,6 +4,7 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/spinlock.h>
 
 #include <net/sock.h>
 
@@ -12,8 +13,10 @@
 struct service {
 	struct socket *socket;
 	struct task_struct *thread;
+	int running;
 };
 
+spinlock_t *lock;
 struct service *svc;
 
 int recv_msg(struct socket *sock, unsigned char *buf, int len) 
@@ -78,13 +81,19 @@ int start_sending(void)
 		error = sock_create_kern(PF_INET,SOCK_STREAM,IPPROTO_TCP,&svc->socket);
 		if(error<0) {
 			printk(KERN_ERR "cannot create socket\n");
-			goto wait;
+			spin_lock(lock);
+			svc->running = 0;
+			spin_unlock(lock);
+			return -1;
 		}
 
 		error = kernel_connect(svc->socket, (struct sockaddr*)&sin, sizeof(struct sockaddr_in), 0);
 		if(error<0) {
 			printk(KERN_ERR "cannot connect socket\n");
-			goto wait;
+			spin_lock(lock);
+			svc->running = 0;
+			spin_unlock(lock);
+			return -1;
 		}
 		printk(KERN_ERR "sock %d connected\n", i++);
 
@@ -96,13 +105,10 @@ int start_sending(void)
 		msleep(1000);
 	}
 	sock_release(svc->socket);
-wait:
-	set_current_state(TASK_INTERRUPTIBLE);
-	while (!kthread_should_stop()) {
-		schedule();
-		set_current_state(TASK_INTERRUPTIBLE);
-	}
-	__set_current_state(TASK_RUNNING);
+
+	spin_lock(lock);
+	svc->running = 0;
+	spin_unlock(lock);
 
 	return 0;
 }
@@ -110,6 +116,14 @@ wait:
 static int __init mod_init(void)
 {
 	svc = kmalloc(sizeof(struct service), GFP_KERNEL);
+	
+	lock = kmalloc(sizeof(spinlock_t), GFP_KERNEL);
+
+	spin_lock_init(lock);
+	spin_lock(lock);
+	svc->running = 1;
+	spin_unlock(lock);
+
 	svc->thread = kthread_run((void *)start_sending, NULL, "echo-client");
 	printk(KERN_ALERT "echo-client module loaded\n");
 
@@ -118,13 +132,13 @@ static int __init mod_init(void)
 
 static void __exit mod_exit(void)
 {
-	//if (svc->socket != NULL) {
-	//	kernel_sock_shutdown(svc->socket, SHUT_RDWR);
-	//	sock_release(svc->socket);
-	//	printk(KERN_ALERT "release socket\n");
-	//}
-	
-	kthread_stop(svc->thread);
+	spin_lock(lock);
+	if (svc->running) {
+		spin_unlock(lock);
+		kthread_stop(svc->thread);
+	} else {
+		spin_unlock(lock);
+	}
 
 	kfree(svc);
 	printk(KERN_ALERT "removed client-serv module\n");

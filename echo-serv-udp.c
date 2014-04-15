@@ -15,7 +15,7 @@ struct service {
 
 struct service *svc;
 
-int recv_msg(struct socket *sock, unsigned char *buf, int len) 
+int recv_msg(struct socket *sock, struct sockaddr_in *cl, unsigned char *buf, int len) 
 {
 	struct msghdr msg;
 	struct kvec iov;
@@ -27,8 +27,8 @@ int recv_msg(struct socket *sock, unsigned char *buf, int len)
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_flags = 0;
-	msg.msg_name = 0;
-	msg.msg_namelen = 0;
+	msg.msg_name = cl;
+	msg.msg_namelen = sizeof(struct sockaddr_in);
 
 	size = kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
 
@@ -38,7 +38,7 @@ int recv_msg(struct socket *sock, unsigned char *buf, int len)
 	return size;
 }
 
-int send_msg(struct socket *sock,char *buf,int len) 
+int send_msg(struct socket *sock, struct sockaddr_in *cl, char *buf, int len) 
 {
 	struct msghdr msg;
 	struct kvec iov;
@@ -50,8 +50,8 @@ int send_msg(struct socket *sock,char *buf,int len)
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
 	msg.msg_flags = 0;
-	msg.msg_name = 0;
-	msg.msg_namelen = 0;
+	msg.msg_name = cl;
+	msg.msg_namelen = sizeof(struct sockaddr_in);
 
 	size = kernel_sendmsg(sock, &msg, &iov, 1, len);
 
@@ -63,61 +63,37 @@ int send_msg(struct socket *sock,char *buf,int len)
 
 int start_listen(void)
 {
-	struct socket *acsock;
 	int error, i, size;
-	struct sockaddr_in sin;
+	struct sockaddr_in sin, client;
 	int len = 15;
 	unsigned char buf[len+1];
 
-	error = sock_create_kern(PF_INET,SOCK_STREAM,IPPROTO_TCP,&svc->listen_socket);
+	error = sock_create_kern(PF_INET, SOCK_DGRAM, IPPROTO_UDP, &svc->listen_socket);
 	if(error<0) {
 		printk(KERN_ERR "cannot create socket\n");
-		goto wait;
+		return -1;
 	}
 
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(PORT);
 
-	error = kernel_bind(svc->listen_socket,(struct sockaddr*)&sin,sizeof(sin));
+	error = kernel_bind(svc->listen_socket, (struct sockaddr*)&sin, sizeof(sin));
 	if(error < 0) {
 		printk(KERN_ERR "cannot bind socket, error code: %d\n", error);
-		goto wait;
+		return -1;
 	}
 
-	error = kernel_listen(svc->listen_socket,5);
-	if(error<0) {
-		printk(KERN_ERR "cannot listen to socket, error code: %d\n", error);
-		goto wait;
-	}
-
-	acsock = kmalloc(sizeof(struct socket), GFP_KERNEL);
 	i = 0;
-	while (!kthread_should_stop()) {
-		error = kernel_accept(svc->listen_socket, &acsock, 0);
-		if(error<0) {
-			printk(KERN_ERR "cannot accept socket\n");
-			kfree(acsock);
-			goto wait;
-		}
-		printk(KERN_ERR "sock %d accepted\n", i++);
-
+	while (1) {
 		memset(&buf, 0, len+1);
-		while ((size = recv_msg(acsock, buf, len)) > 0) {
-			send_msg(acsock, buf, size);
-			memset(&buf, 0, len+1);
+		memset(&client, 0, sizeof(struct sockaddr_in));
+		size = recv_msg(svc->listen_socket, &client, buf, len);
+		if (size < 0) {
+			return -1;
 		}
-
-		sock_release(acsock);
+		send_msg(svc->listen_socket, &client, buf, size);
 	}
-	kfree(acsock);
-wait:
-	set_current_state(TASK_INTERRUPTIBLE);
-	while (!kthread_should_stop()) {
-		schedule();
-		set_current_state(TASK_INTERRUPTIBLE);
-	}
-	__set_current_state(TASK_RUNNING);
 
 	return 0;
 }
@@ -134,13 +110,10 @@ static int __init mod_init(void)
 static void __exit mod_exit(void)
 {
 	if (svc->listen_socket != NULL) {
-		kernel_sock_shutdown(svc->listen_socket, SHUT_RDWR);
 		svc->listen_socket->ops->release(svc->listen_socket);
 		printk(KERN_ALERT "release socket\n");
 	}
 	
-	kthread_stop(svc->thread);
-
 	kfree(svc);
 	printk(KERN_ALERT "removed echo-serv module\n");
 }
