@@ -15,7 +15,8 @@ struct service {
 
 struct service *svc;
 
-int recv_msg(struct socket *sock, struct sockaddr_in *cl, unsigned char *buf, int len) 
+int recv_msg(struct socket *sock, struct sockaddr_in *cl,
+		unsigned char *buf, int len) 
 {
 	struct msghdr msg;
 	struct kvec iov;
@@ -68,7 +69,8 @@ int start_listen(void)
 	int len = 15;
 	unsigned char buf[len+1];
 
-	error = sock_create_kern(PF_INET, SOCK_DGRAM, IPPROTO_UDP, &svc->listen_socket);
+	error = sock_create_kern(PF_INET, SOCK_DGRAM, IPPROTO_UDP,
+			&svc->listen_socket);
 	if(error<0) {
 		printk(KERN_ERR "cannot create socket\n");
 		return -1;
@@ -78,7 +80,8 @@ int start_listen(void)
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(PORT);
 
-	error = kernel_bind(svc->listen_socket, (struct sockaddr*)&sin, sizeof(sin));
+	error = kernel_bind(svc->listen_socket, (struct sockaddr*)&sin,
+			sizeof(sin));
 	if(error < 0) {
 		printk(KERN_ERR "cannot bind socket, error code: %d\n", error);
 		return -1;
@@ -122,7 +125,5 @@ module_init(mod_init);
 module_exit(mod_exit);
 
 MODULE_DESCRIPTION("TCP/UDP echo server in the kernel");
-
 MODULE_LICENSE("GPL");
-
 MODULE_AUTHOR("Douwe De Bock <douwe.debock@ugent.be>");

@@ -16,10 +16,11 @@ struct service {
 	int running;
 };
 
-spinlock_t *lock;
+DEFINE_SPINLOCK(lock);
 struct service *svc;
 
-int recv_msg(struct socket *sock, struct sockaddr_in *cl, unsigned char *buf, int len) 
+int recv_msg(struct socket *sock, struct sockaddr_in *cl,
+		unsigned char *buf, int len) 
 {
 	struct msghdr msg;
 	struct kvec iov;
@@ -80,7 +81,8 @@ int start_sending(void)
 
 	i = 0;
 	while (!kthread_should_stop()) {
-		error = sock_create_kern(PF_INET, SOCK_DGRAM, IPPROTO_UDP, &svc->socket);
+		error = sock_create_kern(PF_INET, SOCK_DGRAM, IPPROTO_UDP,
+				&svc->socket);
 		if(error<0) {
 			printk(KERN_ERR "cannot create socket\n");
 			spin_lock(lock);
@@ -108,9 +110,6 @@ static int __init mod_init(void)
 {
 	svc = kmalloc(sizeof(struct service), GFP_KERNEL);
 	
-	lock = kmalloc(sizeof(spinlock_t), GFP_KERNEL);
-
-	spin_lock_init(lock);
 	spin_lock(lock);
 	svc->running = 1;
 	spin_unlock(lock);
@@ -139,7 +138,5 @@ module_init(mod_init);
 module_exit(mod_exit);
 
 MODULE_DESCRIPTION("TCP/UDP echo client in the kernel");
-
 MODULE_LICENSE("GPL");
-
 MODULE_AUTHOR("Douwe De Bock <douwe.debock@ugent.be>");

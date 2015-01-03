@@ -16,7 +16,7 @@ struct service {
 	int running;
 };
 
-spinlock_t *lock;
+DEFINE_SPINLOCK(lock);
 struct service *svc;
 
 int recv_msg(struct socket *sock, unsigned char *buf, int len) 
@@ -78,7 +78,8 @@ int start_sending(void)
 
 	i = 0;
 	while (!kthread_should_stop()) {
-		error = sock_create_kern(PF_INET,SOCK_STREAM,IPPROTO_TCP,&svc->socket);
+		error = sock_create_kern(PF_INET, SOCK_STREAM, IPPROTO_TCP,
+				&svc->socket);
 		if(error<0) {
 			printk(KERN_ERR "cannot create socket\n");
 			spin_lock(lock);
@@ -87,7 +88,8 @@ int start_sending(void)
 			return -1;
 		}
 
-		error = kernel_connect(svc->socket, (struct sockaddr*)&sin, sizeof(struct sockaddr_in), 0);
+		error = kernel_connect(svc->socket, (struct sockaddr*)&sin,
+				sizeof(struct sockaddr_in), 0);
 		if(error<0) {
 			printk(KERN_ERR "cannot connect socket\n");
 			spin_lock(lock);
@@ -117,9 +119,6 @@ static int __init mod_init(void)
 {
 	svc = kmalloc(sizeof(struct service), GFP_KERNEL);
 	
-	lock = kmalloc(sizeof(spinlock_t), GFP_KERNEL);
-
-	spin_lock_init(lock);
 	spin_lock(lock);
 	svc->running = 1;
 	spin_unlock(lock);
@@ -148,7 +147,5 @@ module_init(mod_init);
 module_exit(mod_exit);
 
 MODULE_DESCRIPTION("TCP/UDP echo client in the kernel");
-
 MODULE_LICENSE("GPL");
-
 MODULE_AUTHOR("Douwe De Bock <douwe.debock@ugent.be>");

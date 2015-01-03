@@ -69,7 +69,8 @@ int start_listen(void)
 	int len = 15;
 	unsigned char buf[len+1];
 
-	error = sock_create_kern(PF_INET,SOCK_STREAM,IPPROTO_TCP,&svc->listen_socket);
+	error = sock_create_kern(PF_INET, SOCK_STREAM, IPPROTO_TCP,
+			&svc->listen_socket);
 	if(error<0) {
 		printk(KERN_ERR "cannot create socket\n");
 		return -1;
@@ -79,7 +80,8 @@ int start_listen(void)
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(PORT);
 
-	error = kernel_bind(svc->listen_socket,(struct sockaddr*)&sin,sizeof(sin));
+	error = kernel_bind(svc->listen_socket, (struct sockaddr*)&sin,
+			sizeof(sin));
 	if(error < 0) {
 		printk(KERN_ERR "cannot bind socket, error code: %d\n", error);
 		return -1;
@@ -91,13 +93,11 @@ int start_listen(void)
 		return -1;
 	}
 
-	acsock = kmalloc(sizeof(struct socket), GFP_KERNEL);
 	i = 0;
 	while (1) {
 		error = kernel_accept(svc->listen_socket, &acsock, 0);
 		if(error<0) {
 			printk(KERN_ERR "cannot accept socket\n");
-			kfree(acsock);
 			return -1;
 		}
 		printk(KERN_ERR "sock %d accepted\n", i++);
@@ -110,7 +110,6 @@ int start_listen(void)
 
 		sock_release(acsock);
 	}
-	kfree(acsock);
 
 	return 0;
 }
@@ -128,7 +127,7 @@ static void __exit mod_exit(void)
 {
 	if (svc->listen_socket != NULL) {
 		kernel_sock_shutdown(svc->listen_socket, SHUT_RDWR);
-		svc->listen_socket->ops->release(svc->listen_socket);
+		sock_release(svc->listen_socket);
 		printk(KERN_ALERT "release socket\n");
 	}
 	
@@ -140,7 +139,5 @@ module_init(mod_init);
 module_exit(mod_exit);
 
 MODULE_DESCRIPTION("TCP/UDP echo server in the kernel");
-
 MODULE_LICENSE("GPL");
-
 MODULE_AUTHOR("Douwe De Bock <douwe.debock@ugent.be>");
